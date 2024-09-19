@@ -4,7 +4,7 @@ import Browser
 import Html exposing (..)
 import Html.Events exposing (..)
 import Http
-import Json.Decode exposing (Decoder, decodeString, int, string)
+import Json.Decode exposing (Decoder, decodeString, int, string, list)
 import Json.Decode.Pipeline exposing (required, optional, hardcoded)
 
 -- MAIN
@@ -32,38 +32,55 @@ type alias Quest =
   , group_name : String
   }
 
-type Model
+type Status
   = Failure
   | Loading
-  | Success Quest
+  | Success
 
+type alias Model =
+  { quests : List Quest
+  , selectedQuest : Int
+  , status : Status
+  }
 
 init : () -> (Model, Cmd Msg)
 init _ =
-  (Loading, getQuest)
+  ( Model
+      []
+      0
+      Loading
+  , getQuests
+  )
 
 -- UPDATE
 
 type Msg
   = LoadQuests
-  | GotQuest (Result Http.Error Quest)
+  | GotQuests (Result Http.Error (List Quest))
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     LoadQuests ->
-      (Loading, getQuest)
+          ( { model | status = Success }
+          , Cmd.none
+          )
 
-    GotQuest result ->
+    GotQuests result ->
       case result of
-        Ok quest ->
-          (Success quest, Cmd.none)
+        Ok quests ->
+          ( { model 
+            | quests = quests 
+            , status = Success
+            }
+          , Cmd.none
+          )
 
         Err e ->
           let
               a = Debug.log "err" e
           in
-          (Failure, Cmd.none)
+          ( { model | status = Failure }, Cmd.none)
 
 -- SUBSCRIPTIONS
 
@@ -77,34 +94,35 @@ view : Model -> Html Msg
 view model =
   div []
     [ h2 [] [ text "Quests" ]
-    , viewQuest model
+    , div []
+      (viewQuestList model.quests)
     ]
 
-viewQuest : Model -> Html Msg
-viewQuest model =
-  case model of
-    Failure ->
-      div []
-        [ text "Could not load anything :("
-        , button [ onClick LoadQuests ] [ text "Try again!" ]
-        ]
+viewQuestList : List Quest -> (List (Html Msg))
+viewQuestList quests =
+  List.map viewQuest quests
 
-    Loading ->
-      text "Loading..."
-
-    Success quest ->
-      div []
-        [ button [ onClick LoadQuests ] [ text "Load more!" ]
-        , p [] [ text quest.name ]
-        ]
+viewQuest : Quest -> Html Msg
+viewQuest quest =
+  div []
+    [ h3 [] [ text ("#" ++ String.fromInt quest.id ++ ": " ++ quest.name ) ]
+    , ul []
+      [ li [] [ text (String.fromInt quest.id) ]
+      , li [] [ text quest.diet ]
+      , li [] [ text quest.responded ]
+      , li [] [ text quest.edited ]
+      , li [] [ text quest.type_name ]
+      , li [] [ text quest.group_name ]
+      ]
+    ]
 
 -- HTTP
 
-getQuest : Cmd Msg
-getQuest =
+getQuests : Cmd Msg
+getQuests =
   Http.get
-    { url = "http://127.0.0.1:5000/api/quest/1"
-    , expect = Http.expectJson GotQuest questDecoder
+    { url = "http://127.0.0.1:5000/api/quests?group=1"
+    , expect = Http.expectJson GotQuests questListDecoder
     }
 
 questDecoder : Decoder Quest
@@ -120,4 +138,9 @@ questDecoder =
     |> required "type_name" string
     |> required "group_id" int
     |> required "group_name" string
+
+questListDecoder : Decoder (List Quest)
+questListDecoder =
+  Json.Decode.list questDecoder
+
 
